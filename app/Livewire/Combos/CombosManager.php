@@ -34,7 +34,7 @@ class CombosManager extends Component
     public bool $is_active = true;
 
     /** @var array<int, array{label: string, required_qty: int, selected_products: array<int, bool>, extras: array<int, string>}> */
-    public array $slots = [];
+    public array $comboSlots = [];
 
     public function mount(): void
     {
@@ -51,7 +51,7 @@ class CombosManager extends Component
 
     public function openCreate(): void
     {
-        $this->reset(['editingId', 'name', 'description', 'slots']);
+        $this->reset(['editingId', 'name', 'description', 'comboSlots']);
         $this->promo_price_usd = '3.50';
         $this->is_active = true;
         $this->addSlot('Elige tus Pasteles', 3);
@@ -67,7 +67,7 @@ class CombosManager extends Component
         $this->promo_price_usd = (string) round((float) $combo->promo_price_usd, 2);
         $this->is_active = $combo->is_active;
 
-        $this->slots = $combo->slots->map(function ($slot) {
+        $this->comboSlots = $combo->slots->map(function ($slot) {
             $selected = [];
             $extras = [];
             foreach ($slot->options as $opt) {
@@ -88,7 +88,7 @@ class CombosManager extends Component
 
     public function addSlot(string $label = 'Nueva Sección', int $qty = 1): void
     {
-        $this->slots[] = [
+        $this->comboSlots[] = [
             'label' => $label,
             'required_qty' => $qty,
             'selected_products' => [],
@@ -98,8 +98,8 @@ class CombosManager extends Component
 
     public function removeSlot(int $index): void
     {
-        unset($this->slots[$index]);
-        $this->slots = array_values($this->slots);
+        unset($this->comboSlots[$index]);
+        $this->comboSlots = array_values($this->comboSlots);
     }
 
     public function save(): void
@@ -107,12 +107,12 @@ class CombosManager extends Component
         $this->validate([
             'name' => ['required', 'string', 'max:150'],
             'promo_price_usd' => ['required', 'numeric', 'gt:0'],
-            'slots' => ['required', 'array', 'min:1'],
-            'slots.*.label' => ['required', 'string', 'max:120'],
-            'slots.*.required_qty' => ['required', 'integer', 'min:1'],
+            'comboSlots' => ['required', 'array', 'min:1'],
+            'comboSlots.*.label' => ['required', 'string', 'max:120'],
+            'comboSlots.*.required_qty' => ['required', 'integer', 'min:1'],
         ]);
 
-        foreach ($this->slots as $slot) {
+        foreach ($this->comboSlots as $slot) {
             $count = collect($slot['selected_products'] ?? [])->filter()->count();
             if ($count === 0) {
                 $this->dispatch('notify', type: 'error', message: "La sección '{$slot['label']}' debe tener al menos un producto elegible.");
@@ -140,7 +140,7 @@ class CombosManager extends Component
                 ]);
             }
 
-            foreach ($this->slots as $idx => $slotData) {
+            foreach ($this->comboSlots as $idx => $slotData) {
                 $slot = ComboSlot::query()->create([
                     'combo_id' => $combo->id,
                     'label' => $slotData['label'],

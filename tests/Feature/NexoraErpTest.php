@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Livewire\Combos\CombosManager;
 use App\Livewire\Pos\PosTerminal;
 use App\Livewire\TopBar;
 use App\Models\CashRegister;
@@ -211,5 +212,34 @@ class NexoraErpTest extends TestCase
         $this->actingAs($cashier)->get('/reportes')->assertForbidden();
         $this->actingAs($cashier)->get('/configuracion')->assertForbidden();
         $this->actingAs($cashier)->get('/pos')->assertOk();
+    }
+
+    public function test_combos_manager_can_create_and_edit_combo(): void
+    {
+        $admin = User::query()->where('role', 'admin')->firstOrFail();
+        $carne = Product::query()->where('sku', 'PAS-CARNE')->firstOrFail();
+        $refresco = Product::query()->where('sku', 'BEB-REF355')->firstOrFail();
+
+        $this->actingAs($admin);
+
+        Livewire::test(CombosManager::class)
+            ->call('openCreate')
+            ->set('name', 'Combo Test')
+            ->set('promo_price_usd', '4.50')
+            ->set("comboSlots.0.selected_products.{$carne->id}", true)
+            ->set("comboSlots.0.extras.{$carne->id}", '')
+            ->call('addSlot')
+            ->set("comboSlots.1.selected_products.{$refresco->id}", true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $combo = Combo::query()->where('name', 'Combo Test')->firstOrFail();
+        $this->assertEquals(2, $combo->slots()->count());
+
+        Livewire::test(CombosManager::class)
+            ->call('openEdit', $combo->id)
+            ->set('promo_price_usd', '5.00')
+            ->call('save')
+            ->assertHasNoErrors();
     }
 }

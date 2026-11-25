@@ -81,16 +81,16 @@
                             <button type="button" wire:click="addSlot" class="px-2.5 py-1 rounded bg-indigo-50 text-indigo-700 font-semibold">+ Agregar Sección</button>
                         </div>
 
-                        @foreach($slots as $sIdx => $slot)
+                        @foreach($comboSlots as $sIdx => $slot)
                             <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-3">
                                 <div class="grid grid-cols-12 gap-2 items-end">
                                     <div class="col-span-7">
                                         <label class="block text-[11px] font-semibold text-slate-600 mb-1">Etiqueta de sección</label>
-                                        <input type="text" wire:model="slots.{{ $sIdx }}.label" class="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5" required>
+                                        <input type="text" wire:model="comboSlots.{{ $sIdx }}.label" class="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5" required>
                                     </div>
                                     <div class="col-span-3">
                                         <label class="block text-[11px] font-semibold text-slate-600 mb-1">Cant. a elegir</label>
-                                        <input type="number" min="1" wire:model="slots.{{ $sIdx }}.required_qty" class="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5" required>
+                                        <input type="number" min="1" wire:model="comboSlots.{{ $sIdx }}.required_qty" class="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5" required>
                                     </div>
                                     <div class="col-span-2 text-right">
                                         <button type="button" wire:click="removeSlot({{ $sIdx }})" class="px-2.5 py-1.5 rounded bg-rose-50 text-rose-600 font-bold">Quitar</button>
@@ -103,11 +103,11 @@
                                         @foreach($products as $prod)
                                             <div class="flex items-center justify-between gap-2 py-1 px-1.5 rounded hover:bg-slate-50">
                                                 <label class="flex items-center gap-2 cursor-pointer">
-                                                    <input type="checkbox" wire:model="slots.{{ $sIdx }}.selected_products.{{ $prod->id }}" class="rounded border-slate-300 text-indigo-600">
+                                                    <input type="checkbox" wire:model="comboSlots.{{ $sIdx }}.selected_products.{{ $prod->id }}" class="rounded border-slate-300 text-indigo-600">
                                                     <span class="font-medium text-slate-800">{{ $prod->name }}</span>
                                                 </label>
                                                 <input type="number" step="0.01" min="0" placeholder="+USD"
-                                                    wire:model="slots.{{ $sIdx }}.extras.{{ $prod->id }}"
+                                                    wire:model="comboSlots.{{ $sIdx }}.extras.{{ $prod->id }}"
                                                     class="w-16 rounded border border-slate-200 px-1.5 py-0.5 text-[11px]">
                                             </div>
                                         @endforeach
