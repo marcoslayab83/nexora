@@ -42,15 +42,16 @@
         </div>
 
         {{-- User --}}
-        <div class="hidden sm:flex items-center gap-2 pl-2 border-l border-slate-200">
-            <div class="text-right">
+        <div class="flex items-center gap-2 pl-2 border-l border-slate-200">
+            <div class="hidden sm:block text-right">
                 <div class="text-xs font-semibold text-slate-800">{{ auth()->user()->name }}</div>
                 <div class="text-[11px] text-slate-500 uppercase">{{ auth()->user()->role }}</div>
             </div>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
-                <button type="submit" class="p-1.5 rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-600" title="Cerrar sesión">
+                <button type="submit" class="inline-flex items-center gap-1 p-1.5 rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-600" title="Cerrar sesión">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                    <span class="sm:hidden text-[11px] font-semibold">Salir</span>
                 </button>
             </form>
         </div>
