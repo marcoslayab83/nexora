@@ -8,6 +8,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\BcvRateService;
 use App\Services\CostCascadeService;
+use App\Services\EvolutionApiService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -60,12 +61,30 @@ class SettingsManager extends Component
 
     public bool $edit_user_active = true;
 
+    // WhatsApp Evolution API settings
+    public string $evolution_api_url = '';
+
+    public string $evolution_api_key = '';
+
+    public string $evolution_instance = 'nexora';
+
+    public string $evolution_webhook_secret = '';
+
+    public bool $whatsapp_auto_reply_menu = true;
+
+    public ?string $evolutionTestResult = null;
+
     public function mount(): void
     {
         $this->costing_method = Setting::getValue('costing_method', 'weighted_average');
         $this->allow_negative_stock = Setting::getBool('allow_negative_stock', false);
         $this->bcv_auto_sync = Setting::getBool('bcv_auto_sync', true);
         $this->manual_bcv_rate = (string) round(ExchangeRate::currentRate('USD'), 4);
+        $this->evolution_api_url = (string) Setting::getValue('evolution_api_url', '');
+        $this->evolution_api_key = (string) Setting::getValue('evolution_api_key', '');
+        $this->evolution_instance = (string) Setting::getValue('evolution_instance', 'nexora');
+        $this->evolution_webhook_secret = (string) Setting::getValue('evolution_webhook_secret', 'nexora-wh-2026');
+        $this->whatsapp_auto_reply_menu = Setting::getBool('whatsapp_auto_reply_menu', true);
     }
 
     public function saveGeneralSettings(CostCascadeService $costCascadeService): void
@@ -201,6 +220,26 @@ class SettingsManager extends Component
 
         $this->reset(['showEditUserModal', 'editingUserId', 'edit_user_password']);
         $this->dispatch('notify', type: 'success', message: 'Usuario actualizado correctamente.');
+    }
+
+    public function saveWhatsAppSettings(): void
+    {
+        Setting::setValue('evolution_api_url', rtrim(trim($this->evolution_api_url), '/'), 'whatsapp');
+        Setting::setValue('evolution_api_key', trim($this->evolution_api_key), 'whatsapp');
+        Setting::setValue('evolution_instance', trim($this->evolution_instance) ?: 'nexora', 'whatsapp');
+        Setting::setValue('evolution_webhook_secret', trim($this->evolution_webhook_secret), 'whatsapp');
+        Setting::setValue('whatsapp_auto_reply_menu', $this->whatsapp_auto_reply_menu, 'whatsapp');
+
+        $this->dispatch('notify', type: 'success', message: 'Configuración de WhatsApp (Evolution API) guardada.');
+    }
+
+    public function testEvolutionConnection(EvolutionApiService $evolution): void
+    {
+        $this->saveWhatsAppSettings();
+        $res = $evolution->getConnectionState();
+        $this->evolutionTestResult = $res['ok']
+            ? 'Conectado (estado instancia: '.$res['state'].')'
+            : 'Sin conexión: '.($res['error'] ?? $res['state']);
     }
 
     public function render()

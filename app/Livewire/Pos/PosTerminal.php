@@ -4,10 +4,13 @@ namespace App\Livewire\Pos;
 
 use App\Models\Category;
 use App\Models\Combo;
+use App\Models\Conversation;
+use App\Models\Customer;
 use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Services\CashService;
+use App\Services\EvolutionApiService;
 use App\Services\PosCheckoutService;
 use App\Support\CurrencyHelper;
 use Illuminate\Support\Facades\Auth;
@@ -52,10 +55,22 @@ class PosTerminal extends Component
     // Receipt modal
     public ?int $lastSaleId = null;
 
+    public ?int $customer_id = null;
+
+    public string $channel = 'pos';
+
     public function mount(): void
     {
         $this->refreshCurrency();
         $this->resetPayments();
+        $reqCustomer = request()->integer('customer_id');
+        if ($reqCustomer > 0 && Customer::query()->whereKey($reqCustomer)->exists()) {
+            $this->customer_id = $reqCustomer;
+        }
+        $reqChannel = request()->string('channel')->toString();
+        if (in_array($reqChannel, ['pos', 'whatsapp'], true)) {
+            $this->channel = $reqChannel;
+        }
     }
 
     #[On('currency-changed')]
@@ -287,7 +302,10 @@ class PosTerminal extends Component
                 $this->payments,
                 (float) $this->discountUsd,
                 (float) $this->changeBs,
-                (float) $this->changeUsd
+                (float) $this->changeUsd,
+                null,
+                $this->customer_id ?: null,
+                $this->channel
             );
 
             $this->cart = [];
@@ -297,6 +315,32 @@ class PosTerminal extends Component
         } catch (\Throwable $e) {
             $this->dispatch('notify', type: 'error', message: $e->getMessage());
         }
+    }
+
+    public function sendReceiptToWhatsApp(EvolutionApiService $evolution): void
+    {
+        if (! $this->lastSaleId) {
+            return;
+        }
+
+        $sale = Sale::query()->with(['customer', 'items.comboSelections'])->find($this->lastSaleId);
+        if (! $sale || ! $sale->customer) {
+            $this->dispatch('notify', type: 'warning', message: 'Esta venta no tiene cliente asignado.');
+
+            return;
+        }
+
+        $conversation = Conversation::query()->firstOrCreate(
+            ['remote_jid' => $sale->customer->phone.'@s.whatsapp.net'],
+            ['customer_id' => $sale->customer->id, 'status' => 'human', 'assigned_user_id' => Auth::id()]
+        );
+
+        $msg = $evolution->sendAndRecordMessage($conversation, $evolution->buildSaleReceiptMessage($sale), Auth::id());
+        $this->dispatch(
+            'notify',
+            type: $msg->status === 'sent' ? 'success' : 'warning',
+            message: $msg->status === 'sent' ? 'Comprobante enviado por WhatsApp.' : 'Ticket registrado en chat (revisa conexión Evolution API).'
+        );
     }
 
     public function render(CashService $cashService)
@@ -345,7 +389,8 @@ class PosTerminal extends Component
             'paidUsd' => round($paidUsd, 4),
             'balanceUsd' => $balanceUsd,
             'selectedCombo' => $this->selectedComboId ? Combo::query()->with('slots.options.product')->find($this->selectedComboId) : null,
-            'lastSale' => $this->lastSaleId ? Sale::query()->with(['items.comboSelections', 'payments.paymentMethod', 'user'])->find($this->lastSaleId) : null,
+            'lastSale' => $this->lastSaleId ? Sale::query()->with(['items.comboSelections', 'payments.paymentMethod', 'user', 'customer'])->find($this->lastSaleId) : null,
+            'customers' => Customer::query()->orderBy('name')->orderBy('phone')->get(),
         ]);
     }
 }

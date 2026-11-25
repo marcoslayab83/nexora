@@ -45,6 +45,20 @@
                     </div>
                 </div>
 
+                @if(auth()->user()->isSupervisorOrAbove() || auth()->user()->role === 'cashier')
+                <div>
+                    <div class="px-3 mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">CRM & WhatsApp</div>
+                    <div class="space-y-1">
+                        <a href="{{ route('whatsapp.inbox') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg {{ request()->routeIs('whatsapp.inbox') ? 'bg-emerald-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800' }}">
+                            <span>Bandeja WhatsApp</span>
+                        </a>
+                        <a href="{{ route('customers') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg {{ request()->routeIs('customers') ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800' }}">
+                            <span>Clientes</span>
+                        </a>
+                    </div>
+                </div>
+                @endif
+
                 @if(auth()->user()->isSupervisorOrAbove() || auth()->user()->role === 'kitchen')
                 <div>
                     <div class="px-3 mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Inventario y Costos</div>

@@ -3,6 +3,8 @@
 use App\Http\Controllers\AuthController;
 use App\Livewire\Cash\CashManager;
 use App\Livewire\Combos\CombosManager;
+use App\Livewire\Crm\CustomersManager;
+use App\Livewire\Crm\WhatsAppInbox;
 use App\Livewire\Dashboard;
 use App\Livewire\Inventory\RawMaterialsManager;
 use App\Livewire\Pos\PosTerminal;
@@ -27,6 +29,8 @@ Route::middleware(['auth', 'role:admin,supervisor,cashier,kitchen'])->group(func
     Route::get('/dashboard', Dashboard::class)->name('dashboard');
     Route::get('/pos', PosTerminal::class)->name('pos');
     Route::get('/caja', CashManager::class)->name('cash');
+    Route::get('/whatsapp', WhatsAppInbox::class)->name('whatsapp.inbox');
+    Route::get('/clientes', CustomersManager::class)->name('customers');
 
     Route::middleware('role:admin,supervisor,kitchen')->group(function () {
         Route::get('/materia-prima', RawMaterialsManager::class)->name('raw-materials');

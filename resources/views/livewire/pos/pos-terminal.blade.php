@@ -74,6 +74,19 @@
                 <span class="text-xs text-slate-500">Tasa: {{ number_format($rate, 2, ',', '.') }} Bs/$</span>
             </div>
 
+            <div class="grid grid-cols-3 gap-2 text-xs">
+                <select wire:model="customer_id" class="col-span-2 rounded-lg border border-slate-300 px-2.5 py-1.5">
+                    <option value="">Cliente General (Mostrador)</option>
+                    @foreach($customers as $cust)
+                        <option value="{{ $cust->id }}">{{ $cust->displayName() }} (+{{ $cust->phone }})</option>
+                    @endforeach
+                </select>
+                <select wire:model="channel" class="rounded-lg border border-slate-300 px-2 py-1.5">
+                    <option value="pos">Mostrador</option>
+                    <option value="whatsapp">WhatsApp</option>
+                </select>
+            </div>
+
             <div class="space-y-2 max-h-60 overflow-y-auto">
                 @forelse($cart as $idx => $item)
                     <div class="flex items-start justify-between gap-2 p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-xs">
@@ -262,7 +275,12 @@
                     @endforeach
                 </div>
 
-                <div class="flex gap-2 pt-3 no-print">
+                <div class="flex flex-wrap gap-2 pt-3 no-print">
+                    @if($lastSale->customer)
+                        <button wire:click="sendReceiptToWhatsApp" type="button" class="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">
+                            Enviar Ticket por WhatsApp
+                        </button>
+                    @endif
                     <button onclick="window.print()" type="button" class="flex-1 py-2 rounded-lg bg-slate-800 text-white font-semibold">Imprimir Ticket</button>
                     <button wire:click="$set('lastSaleId', null)" type="button" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white font-semibold">Nueva Venta</button>
                 </div>

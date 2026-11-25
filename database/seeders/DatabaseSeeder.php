@@ -54,6 +54,11 @@ class DatabaseSeeder extends Seeder
             ['key' => 'allow_negative_stock', 'value' => '0', 'group' => 'inventory'],
             ['key' => 'bcv_auto_sync', 'value' => '1', 'group' => 'currency'],
             ['key' => 'default_display_currency', 'value' => 'USD', 'group' => 'currency'],
+            ['key' => 'evolution_api_url', 'value' => '', 'group' => 'whatsapp'],
+            ['key' => 'evolution_api_key', 'value' => '', 'group' => 'whatsapp'],
+            ['key' => 'evolution_instance', 'value' => 'nexora', 'group' => 'whatsapp'],
+            ['key' => 'evolution_webhook_secret', 'value' => 'nexora-wh-2026', 'group' => 'whatsapp'],
+            ['key' => 'whatsapp_auto_reply_menu', 'value' => '1', 'group' => 'whatsapp'],
         ];
         foreach ($defaults as $setting) {
             Setting::query()->firstOrCreate(['key' => $setting['key']], $setting);

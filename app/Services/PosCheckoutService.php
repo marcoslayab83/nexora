@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\CashSession;
 use App\Models\Combo;
 use App\Models\ComboSlotOption;
+use App\Models\Customer;
 use App\Models\ExchangeRate;
 use App\Models\PaymentMethod;
 use App\Models\Product;
@@ -37,7 +38,9 @@ class PosCheckoutService
         float $discountUsd = 0,
         float $changeBs = 0,
         float $changeUsd = 0,
-        ?string $notes = null
+        ?string $notes = null,
+        ?int $customerId = null,
+        string $channel = 'pos'
     ): Sale {
         if ($session->status !== 'open') {
             throw new DomainException('Debes tener una caja abierta para registrar ventas.');
@@ -57,7 +60,9 @@ class PosCheckoutService
             $discountUsd,
             $changeBs,
             $changeUsd,
-            $notes
+            $notes,
+            $customerId,
+            $channel
         ) {
             $lockedSession = CashSession::query()->lockForUpdate()->findOrFail($session->id);
             if ($lockedSession->status !== 'open') {
@@ -73,6 +78,8 @@ class PosCheckoutService
                 'invoice_number' => 'NX-'.now()->format('Ymd-His').'-'.Str::upper(Str::random(4)),
                 'cash_session_id' => $lockedSession->id,
                 'user_id' => $userId,
+                'customer_id' => $customerId,
+                'channel' => $channel,
                 'exchange_rate_bs' => $rate,
                 'subtotal_usd' => 0,
                 'discount_usd' => round(max(0, $discountUsd), 4),
@@ -257,7 +264,18 @@ class PosCheckoutService
                 'estimated_profit_usd' => round((float) $lockedSession->estimated_profit_usd + $netProfitUsd, 4),
             ]);
 
-            return $sale->fresh(['items.comboSelections', 'payments.paymentMethod', 'user']);
+            if ($customerId) {
+                $customer = Customer::query()->lockForUpdate()->find($customerId);
+                if ($customer) {
+                    $customer->update([
+                        'total_orders' => $customer->total_orders + 1,
+                        'total_spent_usd' => round((float) $customer->total_spent_usd + $totalUsd, 4),
+                        'last_order_at' => now(),
+                    ]);
+                }
+            }
+
+            return $sale->fresh(['items.comboSelections', 'payments.paymentMethod', 'user', 'customer']);
         });
     }
 

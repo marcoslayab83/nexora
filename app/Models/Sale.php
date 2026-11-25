@@ -12,6 +12,8 @@ class Sale extends Model
         'invoice_number',
         'cash_session_id',
         'user_id',
+        'customer_id',
+        'channel',
         'exchange_rate_bs',
         'subtotal_usd',
         'discount_usd',
@@ -50,6 +52,11 @@ class Sale extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
     }
 
     public function items(): HasMany

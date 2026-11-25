@@ -3,14 +3,19 @@
 namespace Tests\Feature;
 
 use App\Livewire\Combos\CombosManager;
+use App\Livewire\Crm\CustomersManager;
+use App\Livewire\Crm\WhatsAppInbox;
 use App\Livewire\Pos\PosTerminal;
 use App\Livewire\Settings\SettingsManager;
 use App\Livewire\TopBar;
 use App\Models\CashRegister;
 use App\Models\Combo;
+use App\Models\Conversation;
+use App\Models\Customer;
 use App\Models\PaymentMethod;
 use App\Models\Product;
 use App\Models\RawMaterial;
+use App\Models\Setting;
 use App\Models\SubRecipe;
 use App\Models\Unit;
 use App\Models\User;
@@ -20,6 +25,7 @@ use App\Services\ProductionService;
 use App\Services\PurchaseService;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -266,5 +272,90 @@ class NexoraErpTest extends TestCase
         $this->assertEquals('cajero.tarde@nexora.centralces.pro', $cashier->email);
         $this->assertEquals('supervisor', $cashier->role);
         $this->assertTrue(\Illuminate\Support\Facades\Hash::check('NuevaClave123', $cashier->password));
+    }
+
+    public function test_evolution_webhook_auto_replies_menu_and_links_customer_sale(): void
+    {
+        Setting::setValue('evolution_api_url', 'https://evo.centralces.pro', 'whatsapp');
+        Setting::setValue('evolution_api_key', 'test-secret-key', 'whatsapp');
+        Setting::setValue('evolution_instance', 'nexora', 'whatsapp');
+        Setting::setValue('evolution_webhook_secret', 'wh-secret', 'whatsapp');
+
+        Http::fake([
+            'https://evo.centralces.pro/message/sendText/*' => Http::response([
+                'key' => ['id' => 'OUT-MSG-001'],
+            ], 200),
+        ]);
+
+        // Unauthorized webhook secret should be rejected
+        $this->postJson('/api/whatsapp/webhook?secret=wrong', [])->assertUnauthorized();
+
+        // Valid Evolution API MESSAGES_UPSERT payload
+        $this->postJson('/api/whatsapp/webhook?secret=wh-secret', [
+            'event' => 'messages.upsert',
+            'data' => [
+                'key' => [
+                    'remoteJid' => '584141234567@s.whatsapp.net',
+                    'fromMe' => false,
+                    'id' => 'IN-MSG-001',
+                ],
+                'pushName' => 'María Pérez',
+                'message' => [
+                    'conversation' => 'Hola, me envías el menú por favor?',
+                ],
+            ],
+        ])->assertOk()->assertJsonPath('processed', true);
+
+        $customer = Customer::query()->where('phone', '584141234567')->firstOrFail();
+        $this->assertEquals('María Pérez', $customer->name);
+
+        $conv = Conversation::query()->where('customer_id', $customer->id)->firstOrFail();
+        $this->assertEquals(2, $conv->messages()->count()); // inbound + auto-reply menu
+
+        $admin = User::query()->where('role', 'admin')->firstOrFail();
+        $this->actingAs($admin);
+        $this->get('/whatsapp')->assertOk();
+        $this->get('/clientes')->assertOk();
+
+        // Test replying from WhatsAppInbox and linking sale in POS
+        Livewire::test(WhatsAppInbox::class)
+            ->call('selectConversation', $conv->id)
+            ->set('replyText', 'Con gusto, ¿de qué sabores deseas tus pasteles?')
+            ->call('sendReply')
+            ->assertHasNoErrors();
+
+        $this->assertEquals(3, $conv->messages()->count());
+
+        $register = CashRegister::query()->firstOrFail();
+        $session = app(CashService::class)->openSession($register->id, $admin->id, 100, 10);
+        $pastel = Product::query()->where('sku', 'PAS-CARNE')->firstOrFail();
+        $usdCash = PaymentMethod::query()->where('code', 'usd_cash')->firstOrFail();
+
+        $sale = app(PosCheckoutService::class)->checkout(
+            $session,
+            $admin->id,
+            [['item_type' => 'product', 'product_id' => $pastel->id, 'quantity' => 2]],
+            [['payment_method_id' => $usdCash->id, 'amount_original' => 2.50]],
+            0,
+            0,
+            0,
+            null,
+            $customer->id,
+            'whatsapp'
+        );
+
+        $customer->refresh();
+        $this->assertEquals('whatsapp', $sale->channel);
+        $this->assertEquals(1, $customer->total_orders);
+        $this->assertEquals(2.50, (float) $customer->total_spent_usd);
+
+        Livewire::test(CustomersManager::class)
+            ->call('openCreate')
+            ->set('name', 'Carlos Ruiz')
+            ->set('phone', '04129998877')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(Customer::query()->where('phone', '584129998877')->exists());
     }
 }

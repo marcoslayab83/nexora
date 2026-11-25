@@ -131,6 +131,57 @@
         </div>
     </div>
 
+    {{-- WhatsApp Evolution API --}}
+    <div class="bg-white rounded-xl border border-emerald-200 p-5 shadow-sm text-xs space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+                <h2 class="text-sm font-bold text-slate-900">Integración WhatsApp CRM (Evolution API)</h2>
+                <p class="text-[11px] text-slate-500">Conecta tu servicio Evolution API de Easypanel para recibir pedidos y responder desde NEXORA</p>
+            </div>
+            @if($evolutionTestResult)
+                <span class="px-2.5 py-1 rounded-full bg-slate-100 text-slate-800 font-semibold">{{ $evolutionTestResult }}</span>
+            @endif
+        </div>
+
+        <form wire:submit="saveWhatsAppSettings" class="space-y-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">URL Evolution API</label>
+                    <input type="url" wire:model="evolution_api_url" placeholder="https://evo.centralces.pro" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Global API Key</label>
+                    <input type="text" wire:model="evolution_api_key" placeholder="Tu API Key" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Nombre de Instancia</label>
+                    <input type="text" wire:model="evolution_instance" placeholder="nexora" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Secreto del Webhook</label>
+                    <input type="text" wire:model="evolution_webhook_secret" placeholder="nexora-wh-2026" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+                </div>
+            </div>
+
+            <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" wire:model="whatsapp_auto_reply_menu" class="rounded border-slate-300 text-emerald-600">
+                <span class="font-medium text-slate-700">Responder automáticamente con el menú y tasa BCV del día cuando un cliente escriba "Hola", "Menú" o "Precios"</span>
+            </label>
+
+            <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
+                <span class="font-bold text-slate-800">URL del Webhook para pegar en Evolution API (evento <code>MESSAGES_UPSERT</code>):</span>
+                <div class="font-mono text-indigo-700 mt-1 break-all">
+                    {{ rtrim(config('app.url'), '/') }}/api/whatsapp/webhook{{ $evolution_webhook_secret ? '?secret='.$evolution_webhook_secret : '' }}
+                </div>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+                <button type="submit" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">Guardar WhatsApp</button>
+                <button type="button" wire:click="testEvolutionConnection" class="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold">Probar Conexión</button>
+            </div>
+        </form>
+    </div>
+
     {{-- Users --}}
     <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm text-xs space-y-4">
         <h2 class="text-sm font-bold text-slate-900">Usuarios y Roles</h2>
