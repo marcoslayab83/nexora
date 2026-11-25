@@ -45,6 +45,21 @@ class SettingsManager extends Component
 
     public string $user_role = 'cashier';
 
+    // Edit user modal
+    public bool $showEditUserModal = false;
+
+    public ?int $editingUserId = null;
+
+    public string $edit_user_name = '';
+
+    public string $edit_user_email = '';
+
+    public string $edit_user_password = '';
+
+    public string $edit_user_role = 'cashier';
+
+    public bool $edit_user_active = true;
+
     public function mount(): void
     {
         $this->costing_method = Setting::getValue('costing_method', 'weighted_average');
@@ -133,10 +148,59 @@ class SettingsManager extends Component
     public function toggleUser(int $id): void
     {
         if ($id === Auth::id()) {
+            $this->dispatch('notify', type: 'warning', message: 'No puedes desactivar tu propio usuario activo.');
+
             return;
         }
         $user = User::query()->findOrFail($id);
         $user->update(['is_active' => ! $user->is_active]);
+    }
+
+    public function editUser(int $id): void
+    {
+        $user = User::query()->findOrFail($id);
+        $this->resetValidation();
+        $this->editingUserId = $user->id;
+        $this->edit_user_name = $user->name;
+        $this->edit_user_email = $user->email;
+        $this->edit_user_password = '';
+        $this->edit_user_role = $user->role;
+        $this->edit_user_active = (bool) $user->is_active;
+        $this->showEditUserModal = true;
+    }
+
+    public function updateUser(): void
+    {
+        $user = User::query()->findOrFail($this->editingUserId);
+
+        $this->validate([
+            'edit_user_name' => ['required', 'string', 'max:120'],
+            'edit_user_email' => ['required', 'email', 'unique:users,email,'.$user->id],
+            'edit_user_password' => ['nullable', 'string', 'min:6'],
+            'edit_user_role' => ['required', 'in:admin,supervisor,cashier,kitchen'],
+        ]);
+
+        if ($user->id === Auth::id() && (! $this->edit_user_active || $this->edit_user_role !== 'admin')) {
+            $this->dispatch('notify', type: 'warning', message: 'No puedes quitar el rol administrador ni desactivar tu propia sesión.');
+
+            return;
+        }
+
+        $payload = [
+            'name' => $this->edit_user_name,
+            'email' => $this->edit_user_email,
+            'role' => $this->edit_user_role,
+            'is_active' => $this->edit_user_active,
+        ];
+
+        if (trim($this->edit_user_password) !== '') {
+            $payload['password'] = Hash::make($this->edit_user_password);
+        }
+
+        $user->update($payload);
+
+        $this->reset(['showEditUserModal', 'editingUserId', 'edit_user_password']);
+        $this->dispatch('notify', type: 'success', message: 'Usuario actualizado correctamente.');
     }
 
     public function render()

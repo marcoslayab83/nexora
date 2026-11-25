@@ -138,14 +138,17 @@
             <div>
                 <label class="block font-semibold text-slate-700 mb-1">Nombre</label>
                 <input type="text" wire:model="user_name" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2" required>
+                @error('user_name') <span class="text-[11px] text-rose-600">{{ $message }}</span> @enderror
             </div>
             <div>
                 <label class="block font-semibold text-slate-700 mb-1">Correo</label>
                 <input type="email" wire:model="user_email" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2" required>
+                @error('user_email') <span class="text-[11px] text-rose-600">{{ $message }}</span> @enderror
             </div>
             <div>
                 <label class="block font-semibold text-slate-700 mb-1">Contraseña</label>
                 <input type="password" wire:model="user_password" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2" required>
+                @error('user_password') <span class="text-[11px] text-rose-600">{{ $message }}</span> @enderror
             </div>
             <div>
                 <label class="block font-semibold text-slate-700 mb-1">Rol</label>
@@ -166,7 +169,7 @@
                         <th class="px-3 py-2">Nombre</th>
                         <th class="px-3 py-2">Correo</th>
                         <th class="px-3 py-2">Rol</th>
-                        <th class="px-3 py-2 text-right">Estado</th>
+                        <th class="px-3 py-2 text-right">Acciones</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
@@ -175,7 +178,8 @@
                             <td class="px-3 py-2 font-semibold">{{ $u->name }}</td>
                             <td class="px-3 py-2 text-slate-500">{{ $u->email }}</td>
                             <td class="px-3 py-2 uppercase font-semibold">{{ $u->role }}</td>
-                            <td class="px-3 py-2 text-right">
+                            <td class="px-3 py-2 text-right space-x-1">
+                                <button wire:click="editUser({{ $u->id }})" class="px-2.5 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold">Editar</button>
                                 <button wire:click="toggleUser({{ $u->id }})" class="px-2.5 py-1 rounded font-semibold {{ $u->is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700' }}">
                                     {{ $u->is_active ? 'Activo' : 'Inactivo' }}
                                 </button>
@@ -186,4 +190,47 @@
             </table>
         </div>
     </div>
+
+    {{-- Edit User Modal --}}
+    @if($showEditUserModal)
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+            <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-5 text-xs">
+                <h3 class="text-base font-bold text-slate-900">Editar Usuario</h3>
+                <form wire:submit="updateUser" class="mt-4 space-y-3">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Nombre</label>
+                        <input type="text" wire:model="edit_user_name" class="w-full rounded-lg border border-slate-300 px-3 py-2" required>
+                        @error('edit_user_name') <span class="text-rose-600">{{ $message }}</span> @enderror
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Correo</label>
+                        <input type="email" wire:model="edit_user_email" class="w-full rounded-lg border border-slate-300 px-3 py-2" required>
+                        @error('edit_user_email') <span class="text-rose-600">{{ $message }}</span> @enderror
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Nueva Contraseña <span class="text-slate-400 font-normal">(dejar vacío para mantener la actual)</span></label>
+                        <input type="password" wire:model="edit_user_password" placeholder="Mínimo 6 caracteres" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+                        @error('edit_user_password') <span class="text-rose-600">{{ $message }}</span> @enderror
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Rol</label>
+                        <select wire:model="edit_user_role" class="w-full rounded-lg border border-slate-300 px-3 py-2">
+                            <option value="cashier">Cajero (POS y Caja)</option>
+                            <option value="kitchen">Cocina (Producción y Recetas)</option>
+                            <option value="supervisor">Supervisor</option>
+                            <option value="admin">Administrador</option>
+                        </select>
+                    </div>
+                    <label class="flex items-center gap-2 cursor-pointer pt-1">
+                        <input type="checkbox" wire:model="edit_user_active" class="rounded border-slate-300 text-indigo-600">
+                        <span class="font-semibold text-slate-700">Usuario activo</span>
+                    </label>
+                    <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                        <button type="button" wire:click="$set('showEditUserModal', false)" class="px-3 py-2 rounded-lg border border-slate-300 font-semibold">Cancelar</button>
+                        <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold">Guardar Cambios</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
 </div>

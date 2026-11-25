@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Livewire\Combos\CombosManager;
 use App\Livewire\Pos\PosTerminal;
+use App\Livewire\Settings\SettingsManager;
 use App\Livewire\TopBar;
 use App\Models\CashRegister;
 use App\Models\Combo;
@@ -241,5 +242,29 @@ class NexoraErpTest extends TestCase
             ->set('promo_price_usd', '5.00')
             ->call('save')
             ->assertHasNoErrors();
+    }
+
+    public function test_settings_manager_can_edit_existing_user(): void
+    {
+        $admin = User::query()->where('role', 'admin')->firstOrFail();
+        $cashier = User::query()->where('role', 'cashier')->firstOrFail();
+
+        $this->actingAs($admin);
+
+        Livewire::test(SettingsManager::class)
+            ->call('editUser', $cashier->id)
+            ->set('edit_user_name', 'Cajero Turno Tarde')
+            ->set('edit_user_email', 'cajero.tarde@nexora.centralces.pro')
+            ->set('edit_user_password', 'NuevaClave123')
+            ->set('edit_user_role', 'supervisor')
+            ->call('updateUser')
+            ->assertHasNoErrors()
+            ->assertSet('showEditUserModal', false);
+
+        $cashier->refresh();
+        $this->assertEquals('Cajero Turno Tarde', $cashier->name);
+        $this->assertEquals('cajero.tarde@nexora.centralces.pro', $cashier->email);
+        $this->assertEquals('supervisor', $cashier->role);
+        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('NuevaClave123', $cashier->password));
     }
 }
