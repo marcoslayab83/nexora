@@ -1,4 +1,23 @@
-<div class="flex flex-wrap items-center justify-between gap-3 bg-white border-b border-slate-200 px-4 lg:px-6 py-3 no-print">
+<div class="flex flex-wrap items-center justify-between gap-3 bg-white border-b border-slate-200 px-4 lg:px-6 py-3 no-print"
+     wire:poll.5s
+     x-data="{
+         lastPending: {{ $pendingApprovals }},
+         playBeep() {
+             try {
+                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                 const osc = ctx.createOscillator();
+                 const gain = ctx.createGain();
+                 osc.type = 'sine';
+                 osc.frequency.setValueAtTime(880, ctx.currentTime);
+                 gain.gain.setValueAtTime(0.15, ctx.currentTime);
+                 osc.connect(gain);
+                 gain.connect(ctx.destination);
+                 osc.start();
+                 osc.stop(ctx.currentTime + 0.25);
+             } catch (e) {}
+         }
+     }"
+     x-effect="if ({{ $pendingApprovals }} > lastPending) { playBeep(); } lastPending = {{ $pendingApprovals }};">
     <div class="flex items-center gap-3">
         <button @click="sidebarOpen = !sidebarOpen" type="button" class="lg:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
@@ -13,6 +32,12 @@
             <a href="{{ route('cash') }}" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
                 <span class="w-2 h-2 rounded-full bg-amber-500"></span>
                 Caja Cerrada — Abrir Turno
+            </a>
+        @endif
+
+        @if($pendingApprovals > 0)
+            <a href="{{ route('whatsapp.inbox') }}" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-rose-600 text-white animate-pulse shadow">
+                <span>{{ $pendingApprovals }} Pago(s) WhatsApp por Validar</span>
             </a>
         @endif
     </div>

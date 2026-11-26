@@ -4,6 +4,7 @@ namespace App\Livewire;
 
 use App\Models\CashSession;
 use App\Models\ExchangeRate;
+use App\Models\WhatsAppOrder;
 use App\Services\BcvRateService;
 use App\Support\CurrencyHelper;
 use Illuminate\Support\Facades\Auth;
@@ -80,9 +81,13 @@ class TopBar extends Component
     public function render()
     {
         $openSession = CashSession::query()->where('status', 'open')->with('cashRegister')->first();
+        $pendingApprovals = WhatsAppOrder::query()
+            ->where('status', WhatsAppOrder::STATE_PENDING_STORE_APPROVAL)
+            ->count();
 
         return view('livewire.top-bar', [
             'openSession' => $openSession,
+            'pendingApprovals' => $pendingApprovals,
         ]);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\BusinessAgentSetting;
 use App\Models\CashRegister;
 use App\Models\Category;
 use App\Models\Combo;
@@ -114,6 +115,21 @@ class DatabaseSeeder extends Seeder
         foreach ($methods as $method) {
             PaymentMethod::query()->firstOrCreate(['code' => $method['code']], $method);
         }
+
+        // 5b. Default Business Agent Setting for WhatsApp Sales & Delivery
+        BusinessAgentSetting::query()->firstOrCreate(
+            ['branch_code' => 'main'],
+            [
+                'business_name' => 'Nexora Pastelería',
+                'gratitude_greeting' => '¡Hola! Muchas gracias por comunicarte con Nexora Pastelería, es un placer atenderte hoy.',
+                'extensive_business_context' => "Horario de atención: Lunes a Domingo de 7:30 AM a 8:00 PM.\nMétodos de pago: Pago Móvil, Divisas en efectivo, Zelle y Punto de Venta.\nPolítica de entrega: Delivery en la zona urbana. El pedido se despacha una vez verificado el comprobante de pago por la tienda.",
+                'delivery_provider_phone' => null,
+                'delivery_required_fields' => BusinessAgentSetting::defaultDeliveryFields(),
+                'llm_provider' => 'openai',
+                'llm_model' => 'gpt-4o-mini',
+                'is_active' => true,
+            ]
+        );
 
         // 6. Initial Demo Catalog (only if DB has no raw materials or products yet)
         if (RawMaterial::query()->count() === 0 && Product::query()->count() === 0) {

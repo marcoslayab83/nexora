@@ -146,6 +146,47 @@ class EvolutionApiService
         return $message;
     }
 
+    /**
+     * Fetches media base64 from Evolution API v2 when webhook does not embed it directly.
+     *
+     * @param  array<string, mixed>  $rawData
+     * @return array{base64: string, mimetype: string}|null
+     */
+    public function fetchMediaBase64(array $rawData): ?array
+    {
+        if (! $this->isConfigured()) {
+            return null;
+        }
+
+        $key = $rawData['key'] ?? null;
+        if (! is_array($key) || empty($key['id'])) {
+            return null;
+        }
+
+        try {
+            $response = Http::timeout(12)
+                ->withHeaders([
+                    'apikey' => $this->apiKey(),
+                    'Content-Type' => 'application/json',
+                ])
+                ->post($this->baseUrl().'/chat/getBase64FromMediaMessage/'.urlencode($this->instanceName()), [
+                    'message' => ['key' => $key],
+                    'convertToMp4' => false,
+                ]);
+
+            if ($response->successful() && $response->json('base64')) {
+                return [
+                    'base64' => (string) $response->json('base64'),
+                    'mimetype' => (string) ($response->json('mimetype') ?? 'image/jpeg'),
+                ];
+            }
+        } catch (\Throwable $e) {
+            Log::debug('[NEXORA][WhatsApp] No se pudo descargar media base64: '.$e->getMessage());
+        }
+
+        return null;
+    }
+
     public function buildLiveMenuMessage(): string
     {
         $rate = CurrencyHelper::activeRate();

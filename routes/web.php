@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\WhatsAppOrderApprovalController;
 use App\Livewire\Cash\CashManager;
 use App\Livewire\Combos\CombosManager;
+use App\Livewire\Crm\BusinessAgentSettingsManager;
 use App\Livewire\Crm\CustomersManager;
 use App\Livewire\Crm\WhatsAppInbox;
 use App\Livewire\Dashboard;
@@ -30,6 +32,7 @@ Route::middleware(['auth', 'role:admin,supervisor,cashier,kitchen'])->group(func
     Route::get('/pos', PosTerminal::class)->name('pos');
     Route::get('/caja', CashManager::class)->name('cash');
     Route::get('/whatsapp', WhatsAppInbox::class)->name('whatsapp.inbox');
+    Route::post('/whatsapp/orders/{order}/authorize', [WhatsAppOrderApprovalController::class, 'authorizeOrder'])->name('whatsapp.orders.authorize');
     Route::get('/clientes', CustomersManager::class)->name('customers');
 
     Route::middleware('role:admin,supervisor,kitchen')->group(function () {
@@ -42,6 +45,7 @@ Route::middleware(['auth', 'role:admin,supervisor,cashier,kitchen'])->group(func
     });
 
     Route::middleware('role:admin,supervisor')->group(function () {
+        Route::get('/agente-ia', BusinessAgentSettingsManager::class)->name('whatsapp.agent-settings');
         Route::get('/reportes', ProfitabilityReport::class)->name('reports');
         Route::get('/configuracion', SettingsManager::class)->name('settings');
     });

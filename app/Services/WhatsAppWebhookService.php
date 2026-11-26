@@ -2,10 +2,11 @@
 
 namespace App\Services;
 
+use App\Models\BusinessAgentSetting;
 use App\Models\Conversation;
 use App\Models\Customer;
 use App\Models\Message;
-use App\Models\Setting;
+use App\Models\WhatsAppOrder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -13,7 +14,8 @@ use Illuminate\Support\Str;
 class WhatsAppWebhookService
 {
     public function __construct(
-        protected EvolutionApiService $evolution
+        protected EvolutionApiService $evolution,
+        protected SalesAgentService $salesAgent
     ) {}
 
     /**
@@ -36,17 +38,21 @@ class WhatsAppWebhookService
 
         $key = $data['key'] ?? [];
         $remoteJid = (string) ($key['remoteJid'] ?? '');
+        $remoteJidAlt = (string) ($key['remoteJidAlt'] ?? '');
 
         if ($remoteJid === '' || str_ends_with($remoteJid, '@g.us') || $remoteJid === 'status@broadcast') {
             return ['processed' => false, 'reason' => 'Ignored empty, group, or broadcast JID'];
         }
+
+        // Prefer real phone JID when WhatsApp sends @lid
+        $effectiveJid = str_ends_with($remoteJid, '@lid') && $remoteJidAlt !== '' ? $remoteJidAlt : $remoteJid;
 
         $fromMe = (bool) ($key['fromMe'] ?? false);
         $externalId = $key['id'] ?? null;
         $pushName = trim((string) ($data['pushName'] ?? ''));
         $msgContent = $data['message'] ?? [];
 
-        [$body, $messageType] = $this->extractBodyAndType($msgContent);
+        [$body, $messageType, $mediaUrl] = $this->extractBodyTypeAndMedia($msgContent);
         if ($body === '' && $messageType === 'text') {
             return ['processed' => false, 'reason' => 'Empty message payload'];
         }
@@ -55,7 +61,7 @@ class WhatsAppWebhookService
             return ['processed' => false, 'reason' => 'Duplicate external_id'];
         }
 
-        $phone = Customer::normalizePhone(Str::before($remoteJid, '@'));
+        $phone = Customer::normalizePhone(Str::before($effectiveJid, '@'));
         if ($phone === '') {
             return ['processed' => false, 'reason' => 'Invalid phone'];
         }
@@ -64,15 +70,19 @@ class WhatsAppWebhookService
             ? Carbon::createFromTimestamp((int) $data['messageTimestamp'])
             : now();
 
+        $defaultBusinessSetting = BusinessAgentSetting::activeDefault();
+
         [$conversation, $savedMessage] = DB::transaction(function () use (
             $phone,
-            $remoteJid,
+            $effectiveJid,
             $pushName,
             $fromMe,
             $body,
             $messageType,
+            $mediaUrl,
             $externalId,
-            $sentAt
+            $sentAt,
+            $defaultBusinessSetting
         ) {
             $customer = Customer::query()->firstOrCreate(
                 ['phone' => $phone],
@@ -84,10 +94,12 @@ class WhatsAppWebhookService
             }
 
             $conversation = Conversation::query()->firstOrCreate(
-                ['remote_jid' => $remoteJid],
+                ['remote_jid' => $effectiveJid],
                 [
                     'customer_id' => $customer->id,
+                    'business_agent_setting_id' => $defaultBusinessSetting?->id,
                     'status' => 'bot',
+                    'agent_state' => WhatsAppOrder::STATE_GREETING,
                     'unread_count' => 0,
                 ]
             );
@@ -99,6 +111,7 @@ class WhatsAppWebhookService
                 'direction' => $fromMe ? 'outbound' : 'inbound',
                 'message_type' => $messageType,
                 'body' => $body !== '' ? $body : "[{$messageType}]",
+                'media_url' => $mediaUrl,
                 'external_id' => $externalId,
                 'status' => $fromMe ? 'sent' : 'received',
                 'sent_at' => $sentAt,
@@ -113,10 +126,30 @@ class WhatsAppWebhookService
             return [$conversation, $message];
         });
 
-        if (! $fromMe && $conversation->status === 'bot' && Setting::getBool('whatsapp_auto_reply_menu', true)) {
-            if ($this->shouldAutoReplyMenu($body)) {
-                $this->evolution->sendAndRecordMessage($conversation, $this->evolution->buildLiveMenuMessage());
+        if (! $fromMe && $conversation->status === 'bot') {
+            $imageBase64 = null;
+            $imageMime = null;
+
+            if ($messageType === 'image') {
+                $embeddedBase64 = $msgContent['base64'] ?? $data['base64'] ?? null;
+                if (is_string($embeddedBase64) && $embeddedBase64 !== '') {
+                    $imageBase64 = $embeddedBase64;
+                    $imageMime = (string) ($msgContent['imageMessage']['mimetype'] ?? 'image/jpeg');
+                } else {
+                    $fetched = $this->evolution->fetchMediaBase64($data);
+                    if ($fetched) {
+                        $imageBase64 = $fetched['base64'];
+                        $imageMime = $fetched['mimetype'];
+                    }
+                }
             }
+
+            $this->salesAgent->processInboundMessage(
+                $conversation->fresh(['businessAgentSetting', 'customer', 'activeOrder']),
+                $savedMessage,
+                $imageBase64,
+                $imageMime
+            );
         }
 
         return ['processed' => true, 'message_id' => $savedMessage->id];
@@ -124,38 +157,32 @@ class WhatsAppWebhookService
 
     /**
      * @param  array<string, mixed>  $msg
-     * @return array{0: string, 1: string}
+     * @return array{0: string, 1: string, 2: string|null}
      */
-    protected function extractBodyAndType(array $msg): array
+    protected function extractBodyTypeAndMedia(array $msg): array
     {
         if (isset($msg['conversation']) && is_string($msg['conversation'])) {
-            return [trim($msg['conversation']), 'text'];
+            return [trim($msg['conversation']), 'text', null];
         }
         if (isset($msg['extendedTextMessage']['text'])) {
-            return [trim((string) $msg['extendedTextMessage']['text']), 'text'];
+            return [trim((string) $msg['extendedTextMessage']['text']), 'text', null];
         }
         if (isset($msg['imageMessage'])) {
-            return [trim((string) ($msg['imageMessage']['caption'] ?? 'Imagen recibida')), 'image'];
+            $caption = trim((string) ($msg['imageMessage']['caption'] ?? 'Imagen recibida (comprobante/foto)'));
+            $url = $msg['imageMessage']['url'] ?? null;
+
+            return [$caption !== '' ? $caption : 'Imagen recibida', 'image', is_string($url) ? $url : null];
         }
         if (isset($msg['audioMessage'])) {
-            return ['Audio recibido', 'audio'];
+            return ['Audio recibido', 'audio', null];
         }
         if (isset($msg['documentMessage'])) {
-            return [trim((string) ($msg['documentMessage']['caption'] ?? 'Documento recibido')), 'document'];
+            $caption = trim((string) ($msg['documentMessage']['caption'] ?? 'Documento recibido'));
+            $url = $msg['documentMessage']['url'] ?? null;
+
+            return [$caption !== '' ? $caption : 'Documento recibido', 'document', is_string($url) ? $url : null];
         }
 
-        return ['', 'text'];
-    }
-
-    protected function shouldAutoReplyMenu(string $body): bool
-    {
-        $normalized = Str::lower(Str::ascii($body));
-        foreach (['hola', 'buenas', 'buenos', 'menu', 'precio', 'precios', 'combo', 'combos', 'pastel', 'pasteles', 'catalogo'] as $keyword) {
-            if (str_contains($normalized, $keyword)) {
-                return true;
-            }
-        }
-
-        return false;
+        return ['', 'text', null];
     }
 }

@@ -55,6 +55,11 @@
                         <a href="{{ route('customers') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg {{ request()->routeIs('customers') ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800' }}">
                             <span>Clientes</span>
                         </a>
+                        @if(auth()->user()->isSupervisorOrAbove())
+                            <a href="{{ route('whatsapp.agent-settings') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg {{ request()->routeIs('whatsapp.agent-settings') ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800' }}">
+                                <span>Agente IA & Delivery</span>
+                            </a>
+                        @endif
                     </div>
                 </div>
                 @endif

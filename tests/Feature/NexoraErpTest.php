@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Livewire\Combos\CombosManager;
+use App\Livewire\Crm\BusinessAgentSettingsManager;
 use App\Livewire\Crm\CustomersManager;
 use App\Livewire\Crm\WhatsAppInbox;
 use App\Livewire\Inventory\RawMaterialsManager;
@@ -10,6 +11,7 @@ use App\Livewire\Pos\PosTerminal;
 use App\Livewire\Products\ProductsManager;
 use App\Livewire\Settings\SettingsManager;
 use App\Livewire\TopBar;
+use App\Models\BusinessAgentSetting;
 use App\Models\CashRegister;
 use App\Models\Combo;
 use App\Models\Conversation;
@@ -21,6 +23,7 @@ use App\Models\Setting;
 use App\Models\SubRecipe;
 use App\Models\Unit;
 use App\Models\User;
+use App\Models\WhatsAppOrder;
 use App\Services\CashService;
 use App\Services\PosCheckoutService;
 use App\Services\ProductionService;
@@ -436,5 +439,176 @@ class NexoraErpTest extends TestCase
         ]);
         Livewire::test(RawMaterialsManager::class)->call('deleteRawMaterial', $unusedRm->id);
         $this->assertNull(RawMaterial::query()->find($unusedRm->id));
+    }
+
+    public function test_sales_agent_state_machine_and_human_in_the_loop_delivery_dispatch(): void
+    {
+        Setting::setValue('evolution_api_url', 'https://evo.centralces.pro', 'whatsapp');
+        Setting::setValue('evolution_api_key', 'test-secret-key', 'whatsapp');
+        Setting::setValue('evolution_instance', 'nexora', 'whatsapp');
+        Setting::setValue('evolution_webhook_secret', 'wh-secret', 'whatsapp');
+
+        $admin = User::query()->where('role', 'admin')->firstOrFail();
+        $this->actingAs($admin);
+        $this->get('/agente-ia')->assertOk();
+
+        $profile = BusinessAgentSetting::activeDefault();
+        Livewire::test(BusinessAgentSettingsManager::class)
+            ->call('loadProfile', $profile->id)
+            ->set('business_name', 'Nexora Pastelería Centro')
+            ->set('gratitude_greeting', '¡Hola! Infinitas gracias por preferir a Nexora Pastelería.')
+            ->set('extensive_business_context', 'Pago Móvil Banesco 0414-0000000 J-40123456-7. Delivery $1.50.')
+            ->set('delivery_provider_phone', '584127778899')
+            ->set('llm_provider', 'openai')
+            ->set('llm_api_key', 'sk-test-123')
+            ->set('llm_model', 'gpt-4o-mini')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $pastelCarne = Product::query()->where('sku', 'PAS-CARNE')->firstOrFail();
+        $initialStock = (int) $pastelCarne->stock_qty;
+
+        Http::fake([
+            'https://api.openai.com/v1/chat/completions' => Http::sequence()
+                ->push([
+                    'choices' => [[
+                        'message' => [
+                            'content' => json_encode([
+                                'reply' => '¡Hola! Infinitas gracias por preferir a Nexora Pastelería. Tenemos Pastel de Carne Molida a $1.25. ¿Cuántos deseas?',
+                                'next_state' => 'SELLING_AND_CLOSING',
+                                'order_items' => [],
+                                'delivery_data' => [],
+                                'payment_data' => ['has_proof' => false],
+                            ]),
+                        ],
+                    ]],
+                ], 200)
+                ->push([
+                    'choices' => [[
+                        'message' => [
+                            'content' => json_encode([
+                                'reply' => 'Perfecto, son 2 Pasteles de Carne ($2.50 / Bs. 113,75). Por favor envía tu comprobante de Pago Móvil.',
+                                'next_state' => 'SELLING_AND_CLOSING',
+                                'order_items' => [
+                                    ['item_type' => 'product', 'product_id' => $pastelCarne->id, 'name' => $pastelCarne->name, 'quantity' => 2],
+                                ],
+                                'delivery_data' => [
+                                    'Nombre del cliente' => 'Luis Gómez',
+                                    'Teléfono' => '04145551122',
+                                    'Dirección exacta' => 'Av. Bolívar Edif. Central Piso 2',
+                                    'Punto de referencia' => 'Frente a la plaza',
+                                    'Método de pago / Monto a cobrar' => 'Pago Móvil Bs. 113,75',
+                                    'Detalle del paquete' => '2 Pasteles de Carne Molida',
+                                ],
+                                'payment_data' => ['has_proof' => false],
+                            ]),
+                        ],
+                    ]],
+                ], 200)
+                ->push([
+                    'choices' => [[
+                        'message' => [
+                            'content' => json_encode([
+                                'reply' => '¡Recibido! Tu comprobante Ref: 998877 está siendo validado por nuestro equipo en tienda.',
+                                'next_state' => 'PAYMENT_VERIFICATION',
+                                'order_items' => [
+                                    ['item_type' => 'product', 'product_id' => $pastelCarne->id, 'name' => $pastelCarne->name, 'quantity' => 2],
+                                ],
+                                'delivery_data' => [
+                                    'Nombre del cliente' => 'Luis Gómez',
+                                    'Teléfono' => '04145551122',
+                                    'Dirección exacta' => 'Av. Bolívar Edif. Central Piso 2',
+                                    'Punto de referencia' => 'Frente a la plaza',
+                                ],
+                                'payment_data' => [
+                                    'has_proof' => true,
+                                    'method_name' => 'Pago Móvil',
+                                    'currency' => 'VES',
+                                    'amount' => 113.75,
+                                    'reference' => '998877',
+                                    'bank' => 'Banesco',
+                                    'date' => '25/11/2026',
+                                ],
+                            ]),
+                        ],
+                    ]],
+                ], 200),
+            'https://evo.centralces.pro/message/sendText/*' => Http::response([
+                'key' => ['id' => 'EVO-MSG-OK'],
+            ], 200),
+        ]);
+
+        // 1. GREETING state
+        $this->postJson('/api/whatsapp/webhook?secret=wh-secret', [
+            'event' => 'messages.upsert',
+            'data' => [
+                'key' => ['remoteJid' => '584145551122@s.whatsapp.net', 'fromMe' => false, 'id' => 'WA-1'],
+                'pushName' => 'Luis Gómez',
+                'message' => ['conversation' => 'Hola'],
+            ],
+        ])->assertOk();
+
+        $conv = Conversation::query()->where('remote_jid', '584145551122@s.whatsapp.net')->firstOrFail();
+        $this->assertEquals(WhatsAppOrder::STATE_SELLING_AND_CLOSING, $conv->agent_state);
+
+        // 2. SELLING_AND_CLOSING state
+        $this->postJson('/api/whatsapp/webhook?secret=wh-secret', [
+            'event' => 'messages.upsert',
+            'data' => [
+                'key' => ['remoteJid' => '584145551122@s.whatsapp.net', 'fromMe' => false, 'id' => 'WA-2'],
+                'pushName' => 'Luis Gómez',
+                'message' => ['conversation' => 'Quiero 2 pasteles de carne para Av. Bolívar Edif. Central Piso 2, frente a la plaza'],
+            ],
+        ])->assertOk();
+
+        $order = WhatsAppOrder::query()->where('conversation_id', $conv->id)->firstOrFail();
+        $this->assertEquals(2.50, (float) $order->total_usd);
+
+        // 3. PAYMENT_VERIFICATION -> PENDING_STORE_APPROVAL
+        $this->postJson('/api/whatsapp/webhook?secret=wh-secret', [
+            'event' => 'messages.upsert',
+            'data' => [
+                'key' => ['remoteJid' => '584145551122@s.whatsapp.net', 'fromMe' => false, 'id' => 'WA-3'],
+                'pushName' => 'Luis Gómez',
+                'message' => ['conversation' => 'Ya pagué por Banesco Pago Móvil Bs 113.75 referencia 998877'],
+            ],
+        ])->assertOk();
+
+        $order->refresh();
+        $conv->refresh();
+        $this->assertEquals(WhatsAppOrder::STATE_PENDING_STORE_APPROVAL, $order->status);
+        $this->assertEquals(WhatsAppOrder::STATE_PENDING_STORE_APPROVAL, $conv->agent_state);
+        $this->assertEquals('998877', $order->payment_reference);
+
+        // 4. Human-in-the-Loop Authorization -> Inventory/Cash deduction + 2 WhatsApp dispatches
+        $register = CashRegister::query()->firstOrFail();
+        app(CashService::class)->openSession($register->id, $admin->id, 500, 10);
+        $pagoMovil = PaymentMethod::query()->where('code', 'pago_movil')->firstOrFail();
+
+        $this->postJson(route('whatsapp.orders.authorize', $order), [
+            'payment_method_id' => $pagoMovil->id,
+            'payment_reference' => '998877',
+            'payment_amount' => 113.75,
+        ])->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('status', WhatsAppOrder::STATE_APPROVED_AND_DISPATCHED)
+            ->assertJsonPath('customer_notified', true)
+            ->assertJsonPath('delivery_notified', true);
+
+        $order->refresh();
+        $pastelCarne->refresh();
+        $this->assertEquals(WhatsAppOrder::STATE_APPROVED_AND_DISPATCHED, $order->status);
+        $this->assertNotNull($order->sale_id);
+        $this->assertEquals($initialStock - 2, (int) $pastelCarne->stock_qty);
+
+        // Verify both outbound WhatsApp messages (customer confirmation + delivery provider dispatch)
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'sendText/nexora')
+            && ($req['number'] ?? '') === '584145551122'
+            && str_contains((string) ($req['text'] ?? ''), 'Pago Aprobado'));
+
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'sendText/nexora')
+            && ($req['number'] ?? '') === '584127778899'
+            && str_contains((string) ($req['text'] ?? ''), 'NUEVO DESPACHO')
+            && str_contains((string) ($req['text'] ?? ''), 'Av. Bolívar Edif. Central Piso 2'));
     }
 }
