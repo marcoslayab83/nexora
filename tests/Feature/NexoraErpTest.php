@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Livewire\Combos\CombosManager;
 use App\Livewire\Crm\CustomersManager;
 use App\Livewire\Crm\WhatsAppInbox;
+use App\Livewire\Inventory\RawMaterialsManager;
 use App\Livewire\Pos\PosTerminal;
+use App\Livewire\Products\ProductsManager;
 use App\Livewire\Settings\SettingsManager;
 use App\Livewire\TopBar;
 use App\Models\CashRegister;
@@ -357,5 +359,82 @@ class NexoraErpTest extends TestCase
             ->assertHasNoErrors();
 
         $this->assertTrue(Customer::query()->where('phone', '584129998877')->exists());
+    }
+
+    public function test_can_edit_initial_cost_before_first_sale_and_delete_unused_entities(): void
+    {
+        $admin = User::query()->where('role', 'admin')->firstOrFail();
+        $this->actingAs($admin);
+
+        // 1. Create a resale product with $0.00 initial cost, then fix initial cost to $1.10 before any sale
+        Livewire::test(ProductsManager::class)
+            ->call('openCreate')
+            ->set('name', 'Malta 1.5L')
+            ->set('sku', 'MALT-TEST')
+            ->set('type', 'resale')
+            ->set('sale_price_usd', '2.00')
+            ->set('initial_stock_qty', '10')
+            ->set('resale_cost_usd', '0')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $malta = Product::query()->where('sku', 'MALT-TEST')->firstOrFail();
+
+        Livewire::test(ProductsManager::class)
+            ->call('openEdit', $malta->id)
+            ->assertSet('hasSales', false)
+            ->set('resale_cost_usd', '1.10')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $malta->refresh();
+        $this->assertEquals(1.10, (float) $malta->avg_stock_cost_usd);
+
+        // 2. Make first sale of Malta 1.5L -> initial cost editing becomes locked & cannot be deleted
+        $register = CashRegister::query()->firstOrFail();
+        $session = app(CashService::class)->openSession($register->id, $admin->id, 100, 10);
+        $usdCash = PaymentMethod::query()->where('code', 'usd_cash')->firstOrFail();
+
+        app(PosCheckoutService::class)->checkout(
+            $session,
+            $admin->id,
+            [['item_type' => 'product', 'product_id' => $malta->id, 'quantity' => 1]],
+            [['payment_method_id' => $usdCash->id, 'amount_original' => 2.00]]
+        );
+
+        Livewire::test(ProductsManager::class)
+            ->call('openEdit', $malta->id)
+            ->assertSet('hasSales', true)
+            ->set('resale_cost_usd', '9.99')
+            ->call('save');
+
+        // Still 1.10 because it already had a sale
+        $this->assertEquals(1.10, (float) $malta->fresh()->avg_stock_cost_usd);
+
+        // Attempting to delete sold product is blocked
+        Livewire::test(ProductsManager::class)->call('deleteProduct', $malta->id);
+        $this->assertNotNull(Product::query()->find($malta->id));
+
+        // 3. Unused product, combo, and raw material CAN be deleted cleanly
+        $unusedProduct = Product::query()->create([
+            'name' => 'Temporal Borrable',
+            'type' => 'resale',
+            'sale_price_usd' => 1.0,
+        ]);
+        Livewire::test(ProductsManager::class)->call('deleteProduct', $unusedProduct->id);
+        $this->assertNull(Product::query()->find($unusedProduct->id));
+
+        $unusedCombo = Combo::query()->create(['name' => 'Combo Borrable', 'promo_price_usd' => 2.5]);
+        Livewire::test(CombosManager::class)->call('deleteCombo', $unusedCombo->id);
+        $this->assertNull(Combo::query()->find($unusedCombo->id));
+
+        $gram = Unit::query()->where('symbol', 'g')->firstOrFail();
+        $unusedRm = RawMaterial::query()->create([
+            'name' => 'Insumo Borrable',
+            'base_unit_id' => $gram->id,
+            'default_purchase_unit_id' => $gram->id,
+        ]);
+        Livewire::test(RawMaterialsManager::class)->call('deleteRawMaterial', $unusedRm->id);
+        $this->assertNull(RawMaterial::query()->find($unusedRm->id));
     }
 }

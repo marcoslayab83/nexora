@@ -6,6 +6,7 @@ use App\Models\Combo;
 use App\Models\ComboSlot;
 use App\Models\ComboSlotOption;
 use App\Models\Product;
+use App\Models\SaleItem;
 use App\Support\CurrencyHelper;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Layout;
@@ -164,6 +165,20 @@ class CombosManager extends Component
 
         $this->showModal = false;
         $this->dispatch('notify', type: 'success', message: 'Combo flexible guardado.');
+    }
+
+    public function deleteCombo(int $id): void
+    {
+        $combo = Combo::query()->findOrFail($id);
+
+        if (SaleItem::query()->where('combo_id', $combo->id)->exists()) {
+            $this->dispatch('notify', type: 'error', message: "No se puede eliminar '{$combo->name}' porque ya tiene ventas registradas. Puedes desactivarlo desde Editar.");
+
+            return;
+        }
+
+        $combo->delete();
+        $this->dispatch('notify', type: 'success', message: "Combo '{$combo->name}' eliminado.");
     }
 
     public function render()

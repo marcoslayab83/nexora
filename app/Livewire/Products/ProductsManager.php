@@ -4,8 +4,12 @@ namespace App\Livewire\Products;
 
 use App\Models\Category;
 use App\Models\CostHistory;
+use App\Models\InventoryMovement;
 use App\Models\Product;
 use App\Models\ProductSubRecipe;
+use App\Models\PurchaseItem;
+use App\Models\SaleComboSelection;
+use App\Models\SaleItem;
 use App\Models\SubRecipe;
 use App\Services\CostCascadeService;
 use App\Services\InventoryService;
@@ -58,6 +62,8 @@ class ProductsManager extends Component
 
     public bool $is_active = true;
 
+    public bool $hasSales = false;
+
     public bool $showHistoryModal = false;
 
     public ?int $historyProductId = null;
@@ -77,7 +83,7 @@ class ProductsManager extends Component
 
     public function openCreate(): void
     {
-        $this->reset(['editingId', 'name', 'sku', 'initial_stock_qty', 'resale_cost_usd']);
+        $this->reset(['editingId', 'name', 'sku', 'initial_stock_qty', 'resale_cost_usd', 'hasSales']);
         $this->type = 'manufactured';
         $this->category_id = Category::query()->value('id');
         $this->sale_price_usd = '1.20';
@@ -89,6 +95,7 @@ class ProductsManager extends Component
         $this->dough_factor = '1.0';
         $this->filling_factor = '1.0';
         $this->is_active = true;
+        $this->hasSales = false;
         $this->showModal = true;
     }
 
@@ -102,8 +109,9 @@ class ProductsManager extends Component
         $this->category_id = $product->category_id;
         $this->sale_price_usd = (string) round((float) $product->sale_price_usd, 4);
         $this->min_stock_qty = (string) $product->min_stock_qty;
-        $this->resale_cost_usd = (string) round((float) $product->avg_stock_cost_usd, 4);
+        $this->resale_cost_usd = (string) round((float) $product->effectiveUnitCostUsd(), 4);
         $this->is_active = $product->is_active;
+        $this->hasSales = $this->productHasSales($product->id);
 
         $dough = $product->subRecipeLinks->firstWhere('role', 'dough');
         $filling = $product->subRecipeLinks->firstWhere('role', 'filling');
@@ -126,6 +134,10 @@ class ProductsManager extends Component
             'min_stock_qty' => ['required', 'numeric', 'min:0'],
         ];
 
+        if ($this->type === 'resale') {
+            $rules['resale_cost_usd'] = ['nullable', 'numeric', 'min:0'];
+        }
+
         if ($this->type === 'manufactured') {
             $rules['dough_sub_recipe_id'] = ['required', 'exists:sub_recipes,id'];
             $rules['filling_sub_recipe_id'] = ['required', 'exists:sub_recipes,id'];
@@ -138,7 +150,9 @@ class ProductsManager extends Component
         DB::transaction(function () use ($costCascadeService, $inventoryService) {
             if ($this->editingId) {
                 $product = Product::query()->findOrFail($this->editingId);
-                $product->update([
+                $hasSales = $this->productHasSales($product->id);
+
+                $updateData = [
                     'category_id' => $this->category_id,
                     'sku' => $this->sku ?: null,
                     'name' => $this->name,
@@ -146,7 +160,31 @@ class ProductsManager extends Component
                     'min_stock_qty' => (float) $this->min_stock_qty,
                     'sale_price_usd' => (float) $this->sale_price_usd,
                     'is_active' => $this->is_active,
-                ]);
+                ];
+
+                if ($this->type === 'resale' && ! $hasSales) {
+                    $newResaleCost = max(0, (float) $this->resale_cost_usd);
+                    $oldCost = (float) $product->avg_stock_cost_usd;
+
+                    $updateData['cost_usd'] = $newResaleCost;
+                    $updateData['avg_stock_cost_usd'] = $newResaleCost;
+                    $updateData['last_cost_usd'] = $newResaleCost;
+
+                    if (abs($oldCost - $newResaleCost) > 0.0000005) {
+                        CostHistory::query()->create([
+                            'costable_type' => 'product',
+                            'costable_id' => $product->id,
+                            'old_cost_usd' => $oldCost,
+                            'new_cost_usd' => $newResaleCost,
+                            'trigger_source' => 'initial_cost_edit',
+                            'reference_id' => $product->id,
+                            'notes' => 'Edición de costo inicial (sin ventas previas)',
+                            'created_at' => now(),
+                        ]);
+                    }
+                }
+
+                $product->update($updateData);
             } else {
                 $resaleCost = $this->type === 'resale' ? max(0, (float) $this->resale_cost_usd) : 0.0;
                 $product = Product::query()->create([
@@ -203,6 +241,43 @@ class ProductsManager extends Component
     {
         $this->historyProductId = $id;
         $this->showHistoryModal = true;
+    }
+
+    public function deleteProduct(int $id): void
+    {
+        $product = Product::query()->findOrFail($id);
+
+        $hasHistory = $this->productHasSales($product->id)
+            || $product->productionBatches()->exists()
+            || PurchaseItem::query()->where('purchasable_type', 'product')->where('purchasable_id', $product->id)->exists();
+
+        if ($hasHistory) {
+            $this->dispatch('notify', type: 'error', message: "No se puede eliminar '{$product->name}' porque ya tiene ventas, compras o producción registrada. Puedes desactivarlo desde Editar.");
+
+            return;
+        }
+
+        DB::transaction(function () use ($product) {
+            InventoryMovement::query()
+                ->where('inventoriable_type', 'product')
+                ->where('inventoriable_id', $product->id)
+                ->delete();
+
+            CostHistory::query()
+                ->where('costable_type', 'product')
+                ->where('costable_id', $product->id)
+                ->delete();
+
+            $product->delete();
+        });
+
+        $this->dispatch('notify', type: 'success', message: "Producto '{$product->name}' eliminado.");
+    }
+
+    protected function productHasSales(int $productId): bool
+    {
+        return SaleItem::query()->where('product_id', $productId)->exists()
+            || SaleComboSelection::query()->where('product_id', $productId)->exists();
     }
 
     public function createCategory(string $name): void

@@ -44,10 +44,11 @@
                         <td class="px-4 py-3 text-slate-600">
                             {{ \App\Support\CurrencyHelper::format((float)$rm->last_cost_usd, $currency, $rate, 6) }} / {{ $rm->baseUnit?->symbol }}
                         </td>
-                        <td class="px-4 py-3 text-right space-x-1">
+                        <td class="px-4 py-3 text-right space-x-1 whitespace-nowrap">
                             <button wire:click="openAdjust({{ $rm->id }})" class="px-2.5 py-1 rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 font-semibold">Ajustar</button>
                             <button wire:click="openKardex({{ $rm->id }})" class="px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 font-semibold">Kardex</button>
                             <button wire:click="openEdit({{ $rm->id }})" class="px-2.5 py-1 rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold">Editar</button>
+                            <button wire:click="deleteRawMaterial({{ $rm->id }})" wire:confirm="¿Eliminar '{{ $rm->name }}'?" class="px-2.5 py-1 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold">Eliminar</button>
                         </td>
                     </tr>
                 @empty
@@ -105,12 +106,25 @@
                                 <label class="block font-semibold text-slate-700 mb-1">Stock Inicial (base)</label>
                                 <input type="number" step="0.01" wire:model="initial_stock_qty" class="w-full rounded-lg border border-slate-300 px-3 py-2">
                             </div>
-                            <div>
-                                <label class="block font-semibold text-slate-700 mb-1">Costo Inicial USD (base)</label>
-                                <input type="number" step="0.000001" wire:model="initial_cost_usd" class="w-full rounded-lg border border-slate-300 px-3 py-2">
-                            </div>
                         @endif
+                        <div>
+                            <label class="block font-semibold text-slate-700 mb-1">Costo Inicial USD (base)</label>
+                            <input type="number" step="0.000001" wire:model="initial_cost_usd" @disabled($editingId && $hasOperations)
+                                class="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100 disabled:text-slate-500">
+                            @if($editingId)
+                                <span class="block text-[10px] mt-1 {{ $hasOperations ? 'text-rose-600' : 'text-emerald-600' }}">
+                                    {{ $hasOperations ? 'Bloqueado: ya tiene compras o producción.' : 'Editable (sin compras ni producción).' }}
+                                </span>
+                            @endif
+                        </div>
                     </div>
+
+                    @if($editingId)
+                        <label class="flex items-center gap-2 cursor-pointer pt-1">
+                            <input type="checkbox" wire:model="is_active" class="rounded border-slate-300 text-indigo-600">
+                            <span class="font-semibold text-slate-700">Materia prima activa</span>
+                        </label>
+                    @endif
 
                     <div class="flex justify-end gap-2 pt-3">
                         <button type="button" wire:click="$set('showModal', false)" class="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 font-semibold">Cancelar</button>

@@ -72,9 +72,10 @@
                                 {{ \App\Support\CurrencyHelper::format($profit, $currency, $rate) }} ({{ $margin }}%)
                             </div>
                         </td>
-                        <td class="px-4 py-3 text-right space-x-1">
+                        <td class="px-4 py-3 text-right space-x-1 whitespace-nowrap">
                             <button wire:click="openHistory({{ $prod->id }})" class="px-2.5 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 font-semibold">Historial</button>
                             <button wire:click="openEdit({{ $prod->id }})" class="px-2.5 py-1 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold">Editar</button>
+                            <button wire:click="deleteProduct({{ $prod->id }})" wire:confirm="¿Eliminar '{{ $prod->name }}'?" class="px-2.5 py-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold">Eliminar</button>
                         </td>
                     </tr>
                 @empty
@@ -168,14 +169,29 @@
                                 <label class="block font-semibold text-slate-700 mb-1">Stock Inicial</label>
                                 <input type="number" wire:model="initial_stock_qty" class="w-full rounded-lg border border-slate-300 px-3 py-2">
                             </div>
-                            @if($type === 'resale')
-                                <div>
-                                    <label class="block font-semibold text-slate-700 mb-1">Costo Inicial USD</label>
-                                    <input type="number" step="0.0001" wire:model="resale_cost_usd" class="w-full rounded-lg border border-slate-300 px-3 py-2">
-                                </div>
-                            @endif
+                        @endif
+                        @if($type === 'resale')
+                            <div>
+                                <label class="block font-semibold text-slate-700 mb-1">
+                                    Costo Inicial USD
+                                </label>
+                                <input type="number" step="0.0001" wire:model="resale_cost_usd" @disabled($editingId && $hasSales)
+                                    class="w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100 disabled:text-slate-500">
+                                @if($editingId)
+                                    <span class="block text-[10px] mt-1 {{ $hasSales ? 'text-rose-600' : 'text-emerald-600' }}">
+                                        {{ $hasSales ? 'Bloqueado: ya tiene ventas registradas.' : 'Editable (aún no tiene ventas).' }}
+                                    </span>
+                                @endif
+                            </div>
                         @endif
                     </div>
+
+                    @if($editingId)
+                        <label class="flex items-center gap-2 cursor-pointer pt-1">
+                            <input type="checkbox" wire:model="is_active" class="rounded border-slate-300 text-indigo-600">
+                            <span class="font-semibold text-slate-700">Producto activo en catálogo y POS</span>
+                        </label>
+                    @endif
 
                     <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
                         <button type="button" wire:click="$set('showModal', false)" class="px-3 py-2 rounded-lg border border-slate-300 font-semibold">Cancelar</button>
